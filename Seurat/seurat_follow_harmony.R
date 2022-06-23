@@ -5,6 +5,7 @@ seurat_follow <- function(seurat_obj,
                           patientss = patientss,
                           regress_factor = regress_factor,
                           namess = namess){
+  library(Seurat)
   library(future)
   plan("multiprocess", workers = 10)
   plan()
