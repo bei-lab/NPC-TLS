@@ -4,7 +4,7 @@ library(dplyr)
 
 load("cd8_filt.RData")
 
-cd8_filt_sample <- subset(cd8_filt, cells=WhichCells(cd8_filt, downsample=2000))
+cd8_filt_sample <- subset(cd8_filt, subset= TCR == "TRUE")
 
 subset_cells <- cd8_filt_sample
 expression_matrix <- subset_cells@assays$RNA@counts %>% as.matrix()
