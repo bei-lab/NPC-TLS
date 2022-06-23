@@ -1,0 +1,137 @@
+library(SingleCellExperiment)
+library(ggplot2)
+library(BayesSpace)
+
+for (i in c("ST16","ST9","ST10","ST11","ST12",
+  "ST7","ST8","ST17","ST18","ST19")){
+  sce <- readVisium(paste0("/NPC/ST/Alignment/",i,"/outs/"))
+  
+  set.seed(102)
+  sce <- spatialPreprocess(sce, platform="Visium", 
+                           n.PCs=15, n.HVGs=2000, log.normalize=T)
+  
+  set.seed(149)
+  sce <- spatialCluster(sce, q=6, platform="Visium", d=15,
+                        init.method="mclust", model="t", gamma=2,
+                        nrep=1000, burn.in=100,
+                        save.chain=F)
+  
+  aa <- sce$col
+  bb <- sce$row
+  
+  sce$col <- aa
+  sce$row <- max(bb)+min(bb)-bb
+  
+  
+  png("bs_spatial_clusterPlot_tmp.png", width = 5, height = 5, res = 400, units = "in")
+  clusterPlot(sce,color = NA)+coord_flip()
+  dev.off()
+  
+  
+  
+  sce.enhanced <- spatialEnhance(sce, q=6, platform="Visium", d=15,
+                                 model="t", gamma=2,
+                                 jitter_prior=0.3, jitter_scale=3.5,
+                                 nrep=1000, burn.in=100,
+                                 save.chain=TRUE)
+  
+  setwd(paste0("/NPC/ST/Bayesspace/",i))
+  
+  png("bs_spatialEnhance_clusterPlot.png", width = 5, height = 5, res = 400, units = "in")
+  clusterPlot(sce.enhanced)+coord_flip()
+  dev.off()
+  
+  markers <- list()
+  markers[["Pan-IG"]] <- c("IGHG1","IGHG2","IGHG3","IGHG4","IGHA1","IGHA2","IGHM","IGHD")
+  markers[["GC"]]<- c("RGS13","AICDA","CD19", "MS4A1")
+  markers[["FCRL4"]] <- c("CD19", "MS4A1","FCRL4")
+  markers[["TFH"]] <- c("CXCR5","CXCL13","CD4","PDCD1","CD3D")
+  markers[["TLS_CAF"]] <- c("PDPN","CXCL13","VCAM1","PTGDS")
+  markers[["CD8_stem"]] <- c("CD8A", "CD3D", "CD3E", "TCF7", "CXCL13")
+  markers[["CD8_ex"]] <- c("CD8A", "CD3D", "CD3E", "PDCD1", "HAVCR2","LAG3","LAYN")
+  
+  sce.enhanced <- enhanceFeatures(sce.enhanced, sce,
+                                  model="xgboost",
+                                  feature_names=purrr::reduce(markers, c),
+                                  nrounds=0)
+  
+  sum_counts <- function(sce, features) {
+    if (length(features) > 1) {
+      colSums(logcounts(sce)[features, ])
+    } else {
+      logcounts(sce)[features, ]
+    }
+  }
+  
+  spot_expr <- purrr::map(markers, function(xs) sum_counts(sce, xs))
+  enhanced_expr <- purrr::map(markers, function(xs) sum_counts(sce.enhanced, xs))
+  
+  library(pheatmap)
+  library(viridis)
+  library(RColorBrewer)
+  library(patchwork)
+  cols <- colorRampPalette(brewer.pal(10, "RdBu"))(50) %>% rev()
+  
+  plot_expression <- function(sce, expr, title) {
+    featurePlot(sce, expr, color=NA) +
+      viridis::scale_fill_viridis(option="A") +coord_flip()+
+      labs(title=title, fill="Log-normalized\nexpression")
+  }
+  
+  
+  plot_expression_comparison <- function(cell_type) {
+    spot.plot <- plot_expression(sce, 
+                                 spot_expr[[cell_type]], 
+                                 "Spot")
+    enhanced.plot <- plot_expression(sce.enhanced,
+                                     enhanced_expr[[cell_type]], 
+                                     "Enhanced")
+    
+    (enhanced.plot) + 
+      plot_annotation(title=cell_type,
+                      theme=theme(plot.title=element_text(size=18)))
+  }
+  
+  png("bs_sce.enhanced_plot_expression_comparison_TFH.png", 
+      width = 6, height = 5, res = 400, units = "in")
+  p <- plot_expression_comparison("TFH")
+  print(p)
+  dev.off()
+  
+  png("bs_sce.enhanced_plot_expression_comparison_GC.png", 
+      width = 6, height = 5, res = 400, units = "in")
+  p <- plot_expression_comparison("GC")
+  print(p)
+  dev.off()
+  
+  png("bs_sce.enhanced_plot_expression_comparison_FCRL4.png", 
+      width = 6, height = 5, res = 400, units = "in")
+  p <- plot_expression_comparison("FCRL4")
+  print(p)
+  dev.off()
+  
+  png("bs_sce.enhanced_plot_expression_comparison_CD8_ex.png", 
+      width = 6, height = 5, res = 400, units = "in")
+  p <- plot_expression_comparison("CD8_ex")
+  print(p)
+  dev.off()
+  
+  png("bs_sce.enhanced_plot_expression_comparison_CD8_stem.png", 
+      width = 6, height = 5, res = 400, units = "in")
+  p <- plot_expression_comparison("CD8_stem")
+  print(p)
+  dev.off()
+  
+  png("bs_sce.enhanced_plot_expression_comparison_TLS_CAF.png", 
+      width = 6, height = 5, res = 400, units = "in")
+  p <- plot_expression_comparison("TLS_CAF")
+  print(p)
+  dev.off()
+  
+  png("bs_sce.enhanced_plot_expression_comparison_Pan-IG.png", 
+      width = 6, height = 5, res = 400, units = "in")
+  p <- plot_expression_comparison("Pan-IG")
+  print(p)
+  dev.off()
+  
+}
